@@ -3,11 +3,12 @@ var
 
   usage = [
     'Usage:',
-    '  node redis-keys-cleanup.js -h <sentinel_host> [options]',
+    '  node redis-key-scanner <sentinel_host> <redis_name> [options]',
     '',
     '   Options:',
-    '    -h <sentinel_host>  [Required] Host or IP of redis sentinel',
     '    -p <sentinel_port>  Default is ' + defaultSentinelPort,
+    '    --scan-limit=N      Limit total number of keys to scan',
+    '    --limit=N           Limit total number of keys to select (output)',
     '',
     '   Select keys that:',
     '    --max-idle=<T>      have been inactive for no more than <T>',
@@ -15,9 +16,7 @@ var
     '    --min-idle=<T>      have been inactive for at least <T>',
     '    --min-ttl=<T>       have a TTL of at least <T>',
     '    --no-expiry         that have TTL of -1 (ie. no expiry)',
-    '',
-    '    --scan-limit=N      Limit total number of keys to scan',
-    '    --limit=N           Limit total number of keys to select (output)',
+    '    --pattern=<p>       match key pattern (default: *)',
     '',
     '   Timeframes <T> are of the form "<number><unit>" where unit may be any',
     "   of 's' (seconds), 'm' (minutes), 'h' (hours), 'd' (days), or 'w' weeks."
@@ -26,11 +25,11 @@ var
   _ = require('lodash'),
   Redis = require('ioredis'),
   timeframeToSeconds = require('timeframe-to-seconds'),
-  when = require('when'),
 
   args = require('minimist')(process.argv.slice(2)),
-  host = args.h,
-  port = Number(args.p) || defaultSentinelPort,
+  sentinelHost = args['_'].length && args['_'][0],
+  sentinelPort = Number(args.p) || defaultSentinelPort,
+  redisName = args['_'].length > 1 && args['_'][1],
   scanLimit = args['scan-limit'] || Infinity,
   selectOptions = _.pickBy({
     limit: args.limit || Infinity,
@@ -38,12 +37,11 @@ var
     maxTTL: timeframeToSeconds(args['max-ttl']),
     minIdle: timeframeToSeconds(args['min-idle']),
     minTTL: timeframeToSeconds(args['min-ttl']),
-    noExpiry: args['expiry'] === false
+    noExpiry: args['expiry'] === false,
+    pattern: args.pattern || '*'
   }, function(v) { return !_.isNaN(v) && v !== false; });
 
-//console.log(selectOptions);
-
-if (!host ||
+if (!sentinelHost || !redisName ||
   (args.hasOwnProperty('max-idle') && isNaN(selectOptions.maxIdle)) ||
   (args.hasOwnProperty('max-ttl') && isNaN(selectOptions.maxTTL)) ||
   (args.hasOwnProperty('min-idle') && isNaN(selectOptions.minIdle)) ||
@@ -54,42 +52,28 @@ if (!host ||
   process.exit(1);
 }
 
-var cruft = {
-  misc: [
-    'resque:*',
-    'veracity:*'
-  ],
-  resque: [
-    'production:*',
-    'veracity:*'
-  ],
-  session: [
-    'production:*',
-    'resque:*',
-    'veracity:*'
-  ]
-};
-
 function log(obj) {
   console.log(JSON.stringify(obj));
 }
 
 function redisConnect(options) {
   return new Redis(_.extend({
-    sentinels: [{host: host, port: port}],
+    sentinels: [{host: sentinelHost, port: sentinelPort}],
   }, options));
 }
 
 var totalKeysScanned = 0, totalKeysSelected = 0, atSelectLimit = false;
 
-function scanKeys(redisName, keyPattern, resolve, reject) {
+function scanKeys(redisName, keyPattern, callback) {
   var redis = redisConnect({name: redisName, role: 'slave'}),
     scanStream = redis.scanStream({match: keyPattern, count: 1000}),
     streamKeysScanned = 0,
     streamKeysSelected = 0;
 
+  callback = _.once(callback);
+
   function endScan() {
-    resolve({
+    callback({
       name: redisName,
       pattern: keyPattern,
       keysScanned: streamKeysScanned,
@@ -132,18 +116,11 @@ function scanKeys(redisName, keyPattern, resolve, reject) {
   scanStream.on('end', endScan);
 }
 
-when.map(_.keys(cruft), function(redisName) {
-  return when.map(cruft[redisName], function(keyPattern) {
-    return when.promise(function(resolve, reject) {
-      scanKeys(redisName, keyPattern, resolve, reject);
-    });
+scanKeys(redisName, selectOptions.pattern, function (results) {
+  log({
+    scans: results,
+    selectOptions: selectOptions,
+    totals: {scanned: totalKeysScanned, selected: totalKeysSelected}
   });
-})
-  .then(function(results) {
-    log({
-      scans: _.flatten(results),
-      selectOptions: selectOptions,
-      totals: {scanned: totalKeysScanned, selected: totalKeysSelected}
-    });
-    process.exit(0);
-  });
+  process.exit(0);
+});

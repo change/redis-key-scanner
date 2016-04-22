@@ -1,13 +1,13 @@
 {
-  "name": "redis-keys-cleanup",
-  "version": "0.0.3",
-  "description": "Scan redis servers looking for known crufty key patterns, and optionally delete",
-  "author": "Chris Campbell <christopher.d.campbell@gmail.com>",
+  "name": "redis-key-scanner",
+  "version": "0.0.4",
+  "description": "Scan redis servers looking for key patterns and activity characteristics",
+  "author": "Chris Campbell @quaelin",
   "repository": {
     "type": "git",
     "url": "git@gist.github.com:68a49426532aae32bf67b9541b89866b.git"
   },
-  "main": "redis-keys-cleanup",
+  "main": "index",
   "engines": {
     "node": "4.4.3"
   },
@@ -15,7 +15,6 @@
     "ioredis": "^1.15.1",
     "lodash": "^4.11.1",
     "minimist": "^1.2.0",
-    "timeframe-to-seconds": "^0.0.4",
-    "when": "^3.7.7"
+    "timeframe-to-seconds": "^0.0.4"
   }
 }
