@@ -1,4 +1,4 @@
-redis-key-cleanup
-=================
+redis-keys-cleanup
+==================
 
 
