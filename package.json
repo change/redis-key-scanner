@@ -1,6 +1,6 @@
 {
   "name": "redis-keys-cleanup",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Scan redis servers looking for known crufty key patterns, and optionally delete",
   "author": "Chris Campbell <christopher.d.campbell@gmail.com>",
   "repository": {
@@ -15,7 +15,7 @@
     "ioredis": "^1.15.1",
     "lodash": "^4.11.1",
     "minimist": "^1.2.0",
-    "timeframe-to-seconds": "^0.0.3",
+    "timeframe-to-seconds": "^0.0.4",
     "when": "^3.7.7"
   }
 }
