@@ -1,18 +1,48 @@
-var _ = require('lodash'),
+var
+  defaultSentinelPort = 26379,
+
+  usage = [
+    'Usage:',
+    '  node redis-keys-cleanup.js -h <sentinel_host> [options]',
+    '',
+    '   Options:',
+    '    -h <sentinel_host>  [Required] Host or IP of redis sentinel',
+    '    -p <sentinel_port>  Default is ' + defaultSentinelPort,
+    '',
+    '   Select keys that:',
+    '    --max-idle=<T>      have been inactive for no more than <T>',
+    '    --max-ttl=<T>       have a TTL of no more than <T>',
+    '    --min-idle=<T>      have been inactive for at least <T>',
+    '    --min-ttl=<T>       have a TTL of at least <T>',
+    '    --no-expiry         that have TTL of -1 (ie. no expiry)',
+    '',
+    '   Timeframes <T> are of the form "<number><unit>" where unit may be any',
+    "   of 's' (seconds), 'm' (minutes), 'h' (hours), 'd' (days), or 'w' weeks."
+  ].join('\n'),
+
+  _ = require('lodash'),
+  Redis = require('ioredis'),
+  timeframeToSeconds = require('timeframe-to-seconds'),
+  when = require('when'),
+
   args = require('minimist')(process.argv.slice(2)),
   host = args.h,
-  port = Number(args.p) || 26379,
-  oneWeekInSeconds = 604800,
-  Redis = require('ioredis'),
-  when = require('when');
+  port = Number(args.p) || defaultSentinelPort,
+  selectOptions = _.pickBy({
+    maxIdle: timeframeToSeconds(args['max-idle']),
+    maxTTL: timeframeToSeconds(args['max-ttl']),
+    minIdle: timeframeToSeconds(args['min-idle']),
+    minTTL: timeframeToSeconds(args['min-ttl']),
+    noExpiry: args['expiry'] === false
+  });
 
-function printUsage() {
-  console.log('Usage:');
-  console.log('  node redis-keys-cleanup.js -h <sentinel_host> [-p <port>] [--delete]');
-}
-
-if (!host) {
-  printUsage();
+if (!host ||
+  (args.hasOwnProperty('max-idle') && isNaN(selectOptions.maxIdle)) ||
+  (args.hasOwnProperty('max-ttl') && isNaN(selectOptions.maxTTL)) ||
+  (args.hasOwnProperty('min-idle') && isNaN(selectOptions.minIdle)) ||
+  (args.hasOwnProperty('min-ttl') && isNaN(selectOptions.minTTL)))
+{
+  console.log(usage);
   process.exit(1);
 }
 
@@ -45,14 +75,20 @@ function redisConnect(options) {
 function scanKeys(redisName, keyPattern, resolve, reject) {
   var redis = redisConnect({name: redisName, role: 'slave'}),
     scanStream = redis.scanStream({match: keyPattern, count: 1000}),
-    totalKeys = 0;
+    totalKeysScanned = 0, totalKeysSelected = 0;
 
-  scanStream.on('data', function(resultKeys) {
-    totalKeys += resultKeys.length;
-    _.each(resultKeys, function(key) {
+  scanStream.on('data', function(batchKeys) {
+    totalKeysScanned += batchKeys.length;
+    _.each(batchKeys, function(key) {
       redis.ttl(key, function(err, ttl) {
         redis.object('IDLETIME', key, function(err, idletime) {
-          if (ttl === -1 && idletime > oneWeekInSeconds) {
+          if ((isNaN(selectOptions.maxIdle) || idletime <= selectOptions.maxIdle) &&
+            (isNaN(selectOptions.maxTTL) || ttl <= selectOptions.maxTTL) &&
+            (isNaN(selectOptions.minIdle) || idletime >= selectOptions.minIdle) &&
+            (isNaN(selectOptions.minTTL) || ttl >= selectOptions.minTTL) &&
+            (!selectOptions.noExpiry && ttl === -1))
+          {
+            totalKeysSelected++;
             log({name: redisName, key: key, ttl: ttl, idletime: idletime});
           }
         });
@@ -61,7 +97,12 @@ function scanKeys(redisName, keyPattern, resolve, reject) {
   });
 
   scanStream.on('end', function() {
-    resolve({name: redisName, pattern: keyPattern, totalKeys: totalKeys});
+    resolve({
+      name: redisName,
+      pattern: keyPattern,
+      totalKeysScanned: totalKeysScanned,
+      totalKeysSelected: totalKeysSelected
+    });
   });
 }
 
