@@ -118,7 +118,7 @@ function scanKeys(redisName, keyPattern, callback) {
 
 scanKeys(redisName, selectOptions.pattern, function (results) {
   log({
-    scans: results,
+    scans: [results],
     selectOptions: selectOptions,
     totals: {scanned: totalKeysScanned, selected: totalKeysSelected}
   });
