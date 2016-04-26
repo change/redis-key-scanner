@@ -1,13 +1,42 @@
 var
-  defaultSentinelPort = 26379,
+  defaults = {
+    pattern: '*',
+    redisPort: 6379,
+    sentinelPort: 26379,
+    scanBatch: 1000,
+    scanLimit: Infinity,
+    limit: Infinity
+  },
 
   usage = [
     'Usage:',
-    '  node redis-key-scanner <sentinel_host> <redis_name> [options]',
+    '  node redis-key-scanner <host>[:<port>] [<master_name>] [options]',
+    '',
+    '   Synopsis:',
+    '    Scan a redis server for keys matching specified criteria, including',
+    '    key patterns, TTL and IDLETIME.  Selected/matched keys are output in',
+    '    a JSON log format.  The scan is non-destructive, and doesn\'t even',
+    '    read any actual key values, so it won\'t affect IDLETIME either.',
     '',
     '   Options:',
-    '    -p <sentinel_port>  Default is ' + defaultSentinelPort,
-    '    --scan-limit=N      Limit total number of keys to scan',
+    '    <host>              (Required) Hostname or IP of the redis server or',
+    '                        sentinel to scan',
+    '    <port>              Port number if non-standard.  Default redis port',
+    '                        is ' + defaults.redisPort + ', and default sentinel',
+    '                        port is ' + defaults.sentinelPort + '.',
+    '    <master_name>       Inclusion of this argument inidicates the use of',
+    '                        redis sentinel.  When <master_name> is specified,',
+    '                        the <host> and <port> options are understood to',
+    '                        refer to a sentinel as opposed to a regular redis',
+    '                        server.  However, a connection will be attempted to',
+    '                        the corresponding *slave*.',
+    '',
+    '    --scan-batch=N      Batch/count size to use with the redis SCAN',
+    '                        operation.  Default is ' + defaults.scanBatch + '.',
+    '    --scan-limit=N      Limit total number of keys to scan.  Scanning will',
+    '                        cease once scan-limit is reached, regardless of',
+    '                        whether any matching keys have been selected.  By',
+    '                        default there is no limit.',
     '    --limit=N           Limit total number of keys to select (output)',
     '',
     '   Select keys that:',
@@ -15,75 +44,82 @@ var
     '    --max-ttl=<T>       have a TTL of no more than <T>',
     '    --min-idle=<T>      have been inactive for at least <T>',
     '    --min-ttl=<T>       have a TTL of at least <T>',
-    '    --no-expiry         that have TTL of -1 (ie. no expiry)',
-    '    --pattern=<p>       match key pattern (default: *)',
+    '    --no-expiry         have TTL of -1 (ie. no expiry)',
+    '    --pattern=<p>       match key pattern (default: ' + defaults.pattern + ')',
     '',
     '   Timeframes <T> are of the form "<number><unit>" where unit may be any',
     "   of 's' (seconds), 'm' (minutes), 'h' (hours), 'd' (days), or 'w' weeks."
   ].join('\n'),
 
   _ = require('lodash'),
+  EventEmitter = require('events').EventEmitter,
   Redis = require('ioredis'),
   timeframeToSeconds = require('timeframe-to-seconds'),
+  util = require('util');
 
-  args = require('minimist')(process.argv.slice(2)),
-  sentinelHost = args['_'].length && args['_'][0],
-  sentinelPort = Number(args.p) || defaultSentinelPort,
-  redisName = args['_'].length > 1 && args['_'][1],
-  scanLimit = args['scan-limit'] || Infinity,
-  selectOptions = _.pickBy({
-    limit: args.limit || Infinity,
-    maxIdle: timeframeToSeconds(args['max-idle']),
-    maxTTL: timeframeToSeconds(args['max-ttl']),
-    minIdle: timeframeToSeconds(args['min-idle']),
-    minTTL: timeframeToSeconds(args['min-ttl']),
-    noExpiry: args['expiry'] === false,
-    pattern: args.pattern || '*'
-  }, function(v) { return !_.isNaN(v) && v !== false; });
+function RedisKeyScanner(options) {
+  var self = this;
 
-if (!sentinelHost || !redisName ||
-  (args.hasOwnProperty('max-idle') && isNaN(selectOptions.maxIdle)) ||
-  (args.hasOwnProperty('max-ttl') && isNaN(selectOptions.maxTTL)) ||
-  (args.hasOwnProperty('min-idle') && isNaN(selectOptions.minIdle)) ||
-  (args.hasOwnProperty('min-ttl') && isNaN(selectOptions.minTTL)) ||
-  isNaN(scanLimit) || isNaN(selectOptions.limit))
-{
-  console.log(usage);
-  process.exit(1);
-}
+  // Validate options
+  if (!options.host) {
+    throw new TypeError('Host is required');
+  }
+  options.port = Number(options.port);
+  if (!options.port) {
+    throw new TypeError('Port number is required');
+  }
+  options.pattern = options.pattern || defaults.pattern;
+  _.each(['maxIdle', 'maxTTL', 'minIdle', 'minTTL'], function(opt) {
+    if (_.has(options, opt)) {
+      options[opt] = timeframeToSeconds(options[opt]);
+      if (isNaN(options[opt])) {
+        throw new TypeError('Expected ' + opt + ' to be a timeframe.');
+      }
+    }
+  });
+  _.each(['scanBatch', 'scanLimit', 'limit'], function(opt) {
+    if (!_.has(options, opt)) {
+      options[opt] = defaults[opt];
+    }
+    if (isNaN(options[opt])) {
+      throw new TypeError('Must be a number: ' + opt);
+    }
+  });
+  this.options = options;
 
-function log(obj) {
-  console.log(JSON.stringify(obj));
-}
+  // Connect to redis server / sentinel
+  var server = _.pick(options, ['host', 'port']),
+    redisDescription;
+  if (options.redisMaster) {
+    this.redisOptions = {
+      sentinels: [server],
+      name: options.redisMaster,
+      role: 'slave'
+    };
+    redisDescription = options.redisMaster;
+  } else {
+    this.redisOptions = server;
+    redisDescription = _.values(server).join(':');
+  }
+  var redis = new Redis(this.redisOptions);
 
-function redisConnect(options) {
-  return new Redis(_.extend({
-    sentinels: [{host: sentinelHost, port: sentinelPort}],
-  }, options));
-}
+  // Initiate scan
+  var scanStream = redis.scanStream({
+    match: options.pattern,
+    count: options.scanBatch
+  });
+  var streamKeysScanned = 0, streamKeysSelected = 0, atSelectLimit = false;
 
-var totalKeysScanned = 0, totalKeysSelected = 0, atSelectLimit = false;
-
-function scanKeys(redisName, keyPattern, callback) {
-  var redis = redisConnect({name: redisName, role: 'slave'}),
-    scanStream = redis.scanStream({match: keyPattern, count: 1000}),
-    streamKeysScanned = 0,
-    streamKeysSelected = 0;
-
-  callback = _.once(callback);
-
-  function endScan() {
-    callback({
-      name: redisName,
-      pattern: keyPattern,
+  var endScan = _.once(function() {
+    self.write(_.extend({
       keysScanned: streamKeysScanned,
       keysSelected: streamKeysSelected
-    });
-  }
+    }, options));
+    self.end();
+  });
 
   scanStream.on('data', function(batchKeys) {
     streamKeysScanned += batchKeys.length;
-    totalKeysScanned += batchKeys.length;
 
     _.each(batchKeys, function(key) {
       if (atSelectLimit) {
@@ -92,35 +128,84 @@ function scanKeys(redisName, keyPattern, callback) {
       redis.ttl(key, function(err, ttl) {
         redis.object('IDLETIME', key, function(err, idletime) {
           if (!atSelectLimit &&
-            (isNaN(selectOptions.maxIdle) || idletime <= selectOptions.maxIdle) &&
-            (isNaN(selectOptions.maxTTL) || ttl <= selectOptions.maxTTL) &&
-            (isNaN(selectOptions.minIdle) || idletime >= selectOptions.minIdle) &&
-            (isNaN(selectOptions.minTTL) || ttl >= selectOptions.minTTL) &&
-            (!selectOptions.noExpiry && ttl === -1))
+            (isNaN(options.maxIdle) || idletime <= options.maxIdle) &&
+            (isNaN(options.maxTTL) || ttl <= options.maxTTL) &&
+            (isNaN(options.minIdle) || idletime >= options.minIdle) &&
+            (isNaN(options.minTTL) || ttl >= options.minTTL) &&
+            (!_.has(options, 'noExpiry') || (options.noExpiry && ttl === -1)))
           {
             streamKeysSelected++;
-            totalKeysSelected++;
-            atSelectLimit = totalKeysSelected >= selectOptions.limit;
-            log({name: redisName, key: key, ttl: ttl, idletime: idletime});
+            atSelectLimit = streamKeysSelected >= options.limit;
+            self.write({
+              name: redisDescription,
+              key: key,
+              ttl: ttl,
+              idletime: idletime
+            });
           }
         });
       });
     });
 
-    if (atSelectLimit || totalKeysScanned >= scanLimit) {
+    if (atSelectLimit || streamKeysScanned >= options.scanLimit) {
       scanStream.pause();
       endScan();
     }
   });
 
   scanStream.on('end', endScan);
+
+  EventEmitter.call(this);
+}
+util.inherits(RedisKeyScanner, EventEmitter);
+
+RedisKeyScanner.prototype.write = function(data) {
+  this.emit('data', data);
+};
+
+RedisKeyScanner.prototype.end = function() {
+  this.emit('end');
+};
+
+function parseCommandLineAndScanKeys() {
+  var args = require('minimist')(process.argv.slice(2)),
+    hostPort = args['_'].length && args['_'][0].split(':'),
+    redisMaster = args['_'].length > 1 && args['_'][1],
+    usingSentinel = !!redisMaster,
+    defaultPort = defaults[usingSentinel ? 'sentinelPort' : 'redisPort'],
+    options = _.pickBy({
+      host: hostPort.length && hostPort[0],
+      port: hostPort.length > 1 ? hostPort[1] : defaultPort,
+      redisMaster: redisMaster || false,
+      scanBatch: args['scan-batch'] || defaults.scanBatch,
+      scanLimit: args['scan-limit'] || defaults.scanLimit,
+      limit: args.limit || defaults.limit,
+      maxIdle: args['max-idle'],
+      maxTTL: args['max-ttl'],
+      minIdle: args['min-idle'],
+      minTTL: args['min-ttl'],
+      noExpiry: args['expiry'] === false,
+      pattern: args.pattern || '*'
+    }, function(v) { return !_.isNaN(v) && !_.isUndefined(v) && v !== false; });
+
+  try {
+    var redisKeyScanner = new RedisKeyScanner(options);
+    redisKeyScanner.on('data', function(data) {
+      console.log(JSON.stringify(data));
+    });
+    redisKeyScanner.on('end', function() {
+      process.exit(0);
+    });
+  } catch (ex) {
+    console.error(ex);
+    console.error(ex.stack);
+    console.log(usage);
+    process.exit(1);
+  }
 }
 
-scanKeys(redisName, selectOptions.pattern, function (results) {
-  log({
-    scans: [results],
-    selectOptions: selectOptions,
-    totals: {scanned: totalKeysScanned, selected: totalKeysSelected}
-  });
-  process.exit(0);
-});
+if (require.main === module) {
+  parseCommandLineAndScanKeys();
+}
+
+module.exports = RedisKeyScanner;
