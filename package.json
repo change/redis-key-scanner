@@ -1,6 +1,6 @@
 {
   "name": "redis-key-scanner",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Chris Campbell @quaelin",
   "repository": {
@@ -16,5 +16,12 @@
     "lodash": "^4.11.1",
     "minimist": "^1.2.0",
     "timeframe-to-seconds": "^0.0.4"
+  },
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "mocha": "^2.4.5"
+  },
+  "scripts": {
+    "test": "mocha"
   }
 }
