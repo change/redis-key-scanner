@@ -1,5 +1,5 @@
 var expect = require('chai').expect,
-  RedisKeyScanner = require('..');
+  RedisKeyScanner = require('.');
 
 function noArgs() {
   new RedisKeyScanner();
