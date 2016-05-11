@@ -8,6 +8,11 @@ var
     limit: Infinity
   },
 
+  supportedOptions = [
+    'host', 'port', 'redisMaster', 'scanBatch', 'scanLimit', 'limit',
+    'maxIdle', 'maxTTL', 'minIdle', 'minTTL', 'noExpiry', 'pattern'
+  ],
+
   usage = [
     'Usage:',
     '  node redis-key-scanner <host>[:<port>] [<master_name>] [options]',
@@ -53,6 +58,7 @@ var
 
   _ = require('lodash'),
   EventEmitter = require('events').EventEmitter,
+  Promise = require('bluebird'),
   Redis = require('ioredis'),
   timeframeToSeconds = require('timeframe-to-seconds'),
   util = require('util');
@@ -85,7 +91,12 @@ function RedisKeyScanner(options) {
       throw new TypeError('Must be a number: ' + opt);
     }
   });
+  var unsupportedOptions = _.keys(_.omit(options, supportedOptions));
+  if (unsupportedOptions.length) {
+    throw new TypeError('Unsupported option(s): ' + unsupportedOptions);
+  }
   this.options = options;
+  //console.log(options);
 
   // Connect to redis server / sentinel
   var server = _.pick(options, ['host', 'port']),
@@ -104,48 +115,59 @@ function RedisKeyScanner(options) {
   var redis = new Redis(this.redisOptions);
 
   // Initiate scan
-  var scanStream = redis.scanStream({
-    match: options.pattern,
-    count: options.scanBatch
-  });
-  var streamKeysScanned = 0, streamKeysSelected = 0, atSelectLimit = false;
+  var atSelectLimit = false,
+    pipelinePromises = [],
+    scanStream = redis.scanStream({
+      match: options.pattern,
+      count: options.scanBatch
+    }),
+    streamKeysScanned = 0,
+    streamKeysSelected = 0;
 
   var endScan = _.once(function() {
-    self.write(_.extend({
-      keysScanned: streamKeysScanned,
-      keysSelected: streamKeysSelected
-    }, options));
-    self.end();
+    Promise.all(pipelinePromises).then(function() {
+      self.write(_.extend({
+        keysScanned: streamKeysScanned,
+        keysSelected: streamKeysSelected
+      }, options));
+      self.end();
+    });
   });
 
   scanStream.on('data', function(batchKeys) {
+    var pipeline = redis.pipeline();
     streamKeysScanned += batchKeys.length;
-
     _.each(batchKeys, function(key) {
-      if (atSelectLimit) {
-        return;
-      }
-      redis.ttl(key, function(err, ttl) {
-        redis.object('IDLETIME', key, function(err, idletime) {
-          if (!atSelectLimit &&
-            (isNaN(options.maxIdle) || idletime <= options.maxIdle) &&
-            (isNaN(options.maxTTL) || ttl <= options.maxTTL) &&
-            (isNaN(options.minIdle) || idletime >= options.minIdle) &&
-            (isNaN(options.minTTL) || ttl >= options.minTTL) &&
-            (!_.has(options, 'noExpiry') || (options.noExpiry && ttl === -1)))
-          {
-            streamKeysSelected++;
-            atSelectLimit = streamKeysSelected >= options.limit;
-            self.write({
-              name: redisDescription,
-              key: key,
-              ttl: ttl,
-              idletime: idletime
-            });
-          }
-        });
-      });
+      pipeline.ttl(key).object('IDLETIME', key);
     });
+
+    pipelinePromises.push(pipeline.exec().then(function(results) {
+      _.each(batchKeys, function(key, i) {
+        // Since we're pipelining 2 redis operations per key, the `results`
+        // array will have two items per key.  Hence the funky array indexing
+        // here:
+        var firstIdx = i * 2,
+          ttl = results[firstIdx][1],
+          idletime = results[firstIdx + 1][1];
+
+        if (!atSelectLimit &&
+          (isNaN(options.maxIdle) || idletime <= options.maxIdle) &&
+          (isNaN(options.maxTTL) || ttl <= options.maxTTL) &&
+          (isNaN(options.minIdle) || idletime >= options.minIdle) &&
+          (isNaN(options.minTTL) || ttl >= options.minTTL) &&
+          (!_.has(options, 'noExpiry') || (options.noExpiry && ttl === -1)))
+        {
+          streamKeysSelected++;
+          atSelectLimit = streamKeysSelected >= options.limit;
+          self.write({
+            name: redisDescription,
+            key: key,
+            ttl: ttl,
+            idletime: idletime
+          });
+        }
+      });
+    }));
 
     if (atSelectLimit || streamKeysScanned >= options.scanLimit) {
       scanStream.pause();
@@ -186,10 +208,19 @@ function parseCommandLineAndScanKeys() {
       minTTL: args['min-ttl'],
       noExpiry: args['expiry'] === false,
       pattern: args.pattern || '*'
-    }, function(v) { return !_.isNaN(v) && !_.isUndefined(v) && v !== false; });
+    }, function(v) { return !_.isNaN(v) && !_.isUndefined(v) && v !== false; }),
+    redisKeyScanner,
+    supportedArgs = [
+      '_', 'expiry', 'limit', 'max-idle', 'max-ttl', 'min-idle', 'min-ttl',
+      'pattern', 'scan-batch', 'scan-limit'
+    ],
+    unsupportedArgs = _.keys(_.omit(args, supportedArgs));
 
   try {
-    var redisKeyScanner = new RedisKeyScanner(options);
+    if (unsupportedArgs.length) {
+      throw new TypeError('Unsupported arg(s): ' + unsupportedArgs);
+    }
+    redisKeyScanner = new RedisKeyScanner(options);
     redisKeyScanner.on('data', function(data) {
       console.log(JSON.stringify(data));
     });
@@ -198,7 +229,6 @@ function parseCommandLineAndScanKeys() {
     });
   } catch (ex) {
     console.error(ex);
-    console.error(ex.stack);
     console.log(usage);
     process.exit(1);
   }
