@@ -113,6 +113,9 @@ function RedisKeyScanner(options) {
     redisDescription = _.values(server).join(':');
   }
   var redis = new Redis(this.redisOptions);
+  redis.on('error', _.once(function(err) {
+    self.emit('error', err);
+  }));
 
   // Initiate scan
   var atSelectLimit = false,
