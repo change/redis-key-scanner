@@ -48,7 +48,11 @@ function scan(options, callback) {
 
 function setTestKeys(keys) {
   var pipeline = defaultRedis().pipeline();
-  _.each(keys, (val, key) => pipeline.set(prefix + key, val));
+  _.each(keys, (ttl, key) => {
+    var args = [prefix + key, key];
+    if (ttl > -1) {args = args.concat(['ex', ttl]);}
+    pipeline.set.apply(pipeline, args);
+  });
   return pipeline.exec();
 }
 
@@ -61,6 +65,8 @@ describe('class RedisKeyScanner', () => {
     it('no host', () => expect(omitArgs('host')).to.throw(TypeError));
 
     it('no port', () => expect(omitArgs('port')).to.throw(TypeError));
+
+    it('unrecognized argument', () => expect(extendArgs({foo: 1})).to.throw(TypeError));
 
     describe('an invalid timeframe value is provided;', () => {
       it('`w` for max-idle', () => {
@@ -88,7 +94,8 @@ describe('class RedisKeyScanner', () => {
   });
 
   describe('when redis connection succeeds', () => {
-    var fourKeys = {one: '1', two: '2', three: '3', four: '4'};
+    var assortedExpiryKeys = {noExpiry1: -1, noExpiry2: -1, expires10: 10, expires100: 100},
+      fourKeys = {one: -1, two: -1, three: -1, four: -1};
 
     before(deleteTestKeys);
 
@@ -100,7 +107,7 @@ describe('class RedisKeyScanner', () => {
       });
 
       describe('when exactly one key exists', () => {
-        before(done => setTestKeys({foo: 'bar'}).then(() => done()));
+        before(done => setTestKeys({foo: -1}).then(() => done()));
 
         it('a scan for `*` selects that key (only)', done => {
           scan({pattern: '*'}, selected => done(matchedKeys(selected) !== 'foo'));
@@ -124,11 +131,23 @@ describe('class RedisKeyScanner', () => {
       });
     });
 
+    describe('when no-expiry is used', () => {
+      beforeEach(done => setTestKeys(assortedExpiryKeys).then(() => done()));
+
+      it('selects only keys that have TTL of -1', done => {
+        scan({pattern: '*', noExpiry: true}, selected => done(matchedKeys(selected) !== 'noExpiry1,noExpiry2'));
+      });
+    });
+
     describe('limits', () => {
       beforeEach(done => setTestKeys(fourKeys).then(() => done()));
 
       it('limit gets honored as an upper bound on results', done => {
         scan({pattern: '*', limit: 3}, selected => done(selected.length !== 3));
+      });
+
+      it('even when limit is greater than scan-limit', done => {
+        scan({pattern: '*', limit: 3, scanLimit: 2}, selected => done(selected.length !== 3));
       });
     });
 
