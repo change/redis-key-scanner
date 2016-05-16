@@ -1,11 +1,11 @@
 {
   "name": "redis-key-scanner",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Change Engineering",
   "repository": {
     "type": "git",
-    "url": "git@gist.github.com:68a49426532aae32bf67b9541b89866b.git"
+    "url": "git@github.com:change/redis-key-scanner.git"
   },
   "main": "index",
   "engines": {
