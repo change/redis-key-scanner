@@ -58,9 +58,7 @@ function setTestKeys(keys) {
 
 describe('class RedisKeyScanner', () => {
   describe('instantiation throws a TypeError when', () => {
-    it('no arguments', () => {
-      expect(() => new RedisKeyScanner()).to.throw(TypeError);
-    });
+    it('no arguments', () => expect(() => new RedisKeyScanner()).to.throw(TypeError));
 
     it('no host', () => expect(omitArgs('host')).to.throw(TypeError));
 
@@ -69,28 +67,18 @@ describe('class RedisKeyScanner', () => {
     it('unrecognized argument', () => expect(extendArgs({foo: 1})).to.throw(TypeError));
 
     describe('an invalid timeframe value is provided;', () => {
-      it('`w` for max-idle', () => {
-        expect(extendArgs({'max-idle': 'w'})).to.throw(TypeError);
-      });
+      it('`w` for max-idle', () => expect(extendArgs({'max-idle': 'w'})).to.throw(TypeError));
 
-      it('`foo` for max-ttl', () => {
-        expect(extendArgs({'max-ttl': 'foo'})).to.throw(TypeError);
-      });
+      it('`foo` for max-ttl', () => expect(extendArgs({'max-ttl': 'foo'})).to.throw(TypeError));
 
-      it('`true` for min-idle', () => {
-        expect(extendArgs({'min-idle': true})).to.throw(TypeError);
-      });
+      it('`true` for min-idle', () => expect(extendArgs({'min-idle': true})).to.throw(TypeError));
 
-      it('`null` for min-ttl', () => {
-        expect(extendArgs({'min-ttl': null})).to.throw(TypeError);
-      });
+      it('`null` for min-ttl', () => expect(extendArgs({'min-ttl': null})).to.throw(TypeError));
     });
   });
 
   describe('when redis not running on the specified port', () => {
-    it('emits an error event', done => {
-      extendArgs({port: 80})().on('error', () => done());
-    });
+    it('emits an error event', done => extendArgs({port: 80})().on('error', () => done()));
   });
 
   describe('when redis connection succeeds', () => {
@@ -131,14 +119,6 @@ describe('class RedisKeyScanner', () => {
       });
     });
 
-    describe('when no-expiry is used', () => {
-      beforeEach(done => setTestKeys(assortedExpiryKeys).then(() => done()));
-
-      it('selects only keys that have TTL of -1', done => {
-        scan({pattern: '*', noExpiry: true}, selected => done(matchedKeys(selected) !== 'noExpiry1,noExpiry2'));
-      });
-    });
-
     describe('limits', () => {
       beforeEach(done => setTestKeys(fourKeys).then(() => done()));
 
@@ -148,6 +128,38 @@ describe('class RedisKeyScanner', () => {
 
       it('even when limit is greater than scan-limit', done => {
         scan({pattern: '*', limit: 3, scanLimit: 2}, selected => done(selected.length !== 3));
+      });
+    });
+
+    describe('TTL checks', () => {
+      beforeEach(done => setTestKeys(assortedExpiryKeys).then(() => done()));
+
+      it('when no-expiry is used, selects only keys that have TTL of -1', done => {
+        scan({pattern: '*', noExpiry: true}, selected => done(matchedKeys(selected) !== 'noExpiry1,noExpiry2'));
+      });
+
+      it('minTTL and maxTTL effectively constrain the range of TTL values', done => {
+        scan({pattern: '*', minTTL: 9, maxTTL: 11}, selected => done(matchedKeys(selected) !== 'expires10'));
+      });
+    });
+
+    describe.skip('IDLETIME checks (takes one minute)', function() {
+      this.timeout(60000);
+
+      before(done => {
+        _.each([
+          () => setTestKeys({'40-seconds-ago': -1}),
+          () => setTestKeys({'30-seconds-ago': -1}),
+          () => setTestKeys({'20-seconds-ago': -1}),
+          () => setTestKeys({'10-seconds-ago': -1}),
+          () => { console.log('done before!'); done(); }
+        ], (func, idx) => setTimeout(func, idx * 10000));
+      });
+
+      it('minIdle and maxIdle effectively constrain the range of IDLETIME values', done => {
+        scan({pattern: '*', minIdle: 4, maxIdle: 6}, selected => {
+          done(matchedKeys(selected) !== '2-seconds-ago,3-seconds-ago');
+        });
       });
     });
 
