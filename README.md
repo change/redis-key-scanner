@@ -7,7 +7,8 @@ format.  The scan is non-destructive, and doesn't even read any actual key
 values, so it won't affect IDLETIME either.
 
 Example command-line usage, querying a locally running redis server for keys
-that start with the prefix "mykeys:" and have been idle for at least one week:
+that start with the prefix "mykeys:" and have been idle (ie., not written or
+read) for at least one week:
 ```
 > node redis-key-scanner localhost --pattern=mykeys:* --min-idle=1w
 ```
@@ -24,7 +25,7 @@ total stats:
 You can alternatively require `redis-key-scanner` as a Node.js module, in which
 case it implements a stream interface and each record will be emitted as a
 separate 'data' event.
-```
+```js
 var RedisKeyScanner = require('redis-key-scanner');
 var scanner = new RedisKeyScanner({
   host: 'localhost',
