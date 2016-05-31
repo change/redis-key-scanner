@@ -96,7 +96,6 @@ function RedisKeyScanner(options) {
     throw new TypeError('Unsupported option(s): ' + unsupportedOptions);
   }
   this.options = options;
-  //console.log(options);
 
   // Connect to redis server / sentinel
   var server = _.pick(options, ['host', 'port']),
