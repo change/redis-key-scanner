@@ -10,7 +10,8 @@ Example command-line usage, querying a locally running redis server for keys
 that start with the prefix "mykeys:" and have been idle (ie., not written or
 read) for at least one week:
 ```
-> node redis-key-scanner localhost --pattern=mykeys:* --min-idle=1w
+> npm install -g redis-key-scanner
+> redis-key-scanner localhost --pattern=mykeys:* --min-idle=1w
 ```
 
 Output will be one JSON line per selected key, followed by a "summary" line with
