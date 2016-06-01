@@ -1,6 +1,6 @@
 {
   "name": "redis-key-scanner",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Change Engineering",
   "license": "MIT",
