@@ -63,6 +63,13 @@ var
   timeframeToSeconds = require('timeframe-to-seconds'),
   util = require('util');
 
+// Fix for stdout truncation bug in Node 6.x
+// (https://github.com/nodejs/node/issues/6456)
+[process.stdout, process.stderr].forEach((s) => {
+  s && s.isTTY && s._handle && s._handle.setBlocking &&
+    s._handle.setBlocking(true);
+});
+
 function RedisKeyScanner(options) {
   var self = this;
 
@@ -230,7 +237,7 @@ function parseCommandLineAndScanKeys() {
       process.exit(0);
     });
   } catch (ex) {
-    console.error(ex);
+    console.error(String(ex));
     console.log(usage);
     process.exit(1);
   }
