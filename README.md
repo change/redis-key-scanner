@@ -4,7 +4,11 @@ redis-key-scanner
 Scan a redis server for keys matching specified criteria, including key
 patterns, TTL and IDLETIME.  Selected/matched keys are output in a JSON log
 format.  The scan is non-destructive, and doesn't even read any actual key
-values, so it won't affect IDLETIME either.
+values.
+
+Note that if you are checking TTL times, due to an acknowledged
+[bug][redis-ttl-bug] in Redis, this will actually reset the IDLETIME to 0 for
+the selected keys, so subsequent scans may not return the same results.
 
 Example command-line usage, querying a locally running redis server for keys
 that start with the prefix "mykeys:" and have been idle (ie., not written or
@@ -17,9 +21,9 @@ read) for at least one week:
 Output will be one JSON line per selected key, followed by a "summary" line with
 total stats:
 ```
-{"name":"localhost:6379","key":"mykeys:larry","ttl":-1,"idletime":604800}
-{"name":"localhost:6379","key":"mykeys:curly","ttl":-1,"idletime":900000}
-{"name":"localhost:6379","key":"mykeys:moe","ttl":-1,"idletime":1000000}
+{"name":"localhost:6379","key":"mykeys:larry","idletime":604800}
+{"name":"localhost:6379","key":"mykeys:curly","idletime":900000}
+{"name":"localhost:6379","key":"mykeys:moe","idletime":1000000}
 {"keysScanned":17,"keysSelected":3,"host":"localhost","port":6379,"scanBatch":1000,"scanLimit":null,"limit":null,"pattern":"mykeys:*"}
 ```
 
@@ -42,3 +46,6 @@ scanner.on('end', function() {
 ```
 
 Run `node redis-key-scanner` to see the full list of available options.
+
+
+[redis-ttl-bug]: https://github.com/antirez/redis/pull/2090#issuecomment-75944263

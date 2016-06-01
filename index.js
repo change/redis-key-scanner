@@ -74,6 +74,10 @@ var
 function RedisKeyScanner(options) {
   var self = this;
 
+  function hasOption(opt) {
+    return _.has(options, opt);
+  }
+
   // Validate options
   if (!options.host) {
     throw new TypeError('Host is required');
@@ -84,7 +88,7 @@ function RedisKeyScanner(options) {
   }
   options.pattern = options.pattern || defaults.pattern;
   _.each(['maxIdle', 'maxTTL', 'minIdle', 'minTTL'], function(opt) {
-    if (_.has(options, opt)) {
+    if (hasOption(opt)) {
       options[opt] = timeframeToSeconds(options[opt]);
       if (isNaN(options[opt])) {
         throw new TypeError('Expected ' + opt + ' to be a timeframe.');
@@ -92,7 +96,7 @@ function RedisKeyScanner(options) {
     }
   });
   _.each(['scanBatch', 'scanLimit', 'limit'], function(opt) {
-    if (!_.has(options, opt)) {
+    if (!hasOption(opt)) {
       options[opt] = defaults[opt];
     }
     if (isNaN(options[opt])) {
@@ -126,6 +130,7 @@ function RedisKeyScanner(options) {
 
   // Initiate scan
   var atSelectLimit = false,
+    checkTTL = _.some(['noExpiry', 'maxTTL', 'minTTL'], hasOption),
     pipelinePromises = [],
     scanStream = redis.scanStream({
       match: options.pattern,
@@ -148,33 +153,36 @@ function RedisKeyScanner(options) {
     var pipeline = redis.pipeline();
     streamKeysScanned += batchKeys.length;
     _.each(batchKeys, function(key) {
-      pipeline.ttl(key).object('IDLETIME', key);
+      pipeline.object('IDLETIME', key);
+      if (checkTTL) {pipeline.ttl(key);}
     });
 
     pipelinePromises.push(pipeline.exec().then(function(results) {
       _.each(batchKeys, function(key, i) {
-        // Since we're pipelining 2 redis operations per key, the `results`
-        // array will have two items per key.  Hence the funky array indexing
-        // here:
-        var firstIdx = i * 2,
-          ttl = results[firstIdx][1],
-          idletime = results[firstIdx + 1][1];
+        // Since we are sometimes pipelining 2 redis operations per key, the
+        // `results` array may have two items per key.  Hence the funky array
+        // indexing here:
+        var entry,
+          idleIdx = checkTTL ? i * 2 : i,
+          idletime = results[idleIdx][1],
+          ttl = checkTTL && results[idleIdx + 1][1];
 
         if (!atSelectLimit &&
           (isNaN(options.maxIdle) || idletime <= options.maxIdle) &&
           (isNaN(options.maxTTL) || ttl <= options.maxTTL) &&
           (isNaN(options.minIdle) || idletime >= options.minIdle) &&
           (isNaN(options.minTTL) || ttl >= options.minTTL) &&
-          (!_.has(options, 'noExpiry') || (options.noExpiry && ttl === -1)))
+          (!hasOption('noExpiry') || (options.noExpiry && ttl === -1)))
         {
           streamKeysSelected++;
           atSelectLimit = streamKeysSelected >= options.limit;
-          self.write({
+          entry = {
             name: redisDescription,
             key: key,
-            ttl: ttl,
             idletime: idletime
-          });
+          };
+          if (checkTTL) {entry.ttl = ttl;}
+          self.write(entry);
         }
       });
     }));
