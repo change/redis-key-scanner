@@ -143,7 +143,7 @@ describe('class RedisKeyScanner', () => {
       });
     });
 
-    describe.skip('IDLETIME checks (takes one minute)', function() {
+    describe('IDLETIME checks (takes one minute)', function() {
       this.timeout(60000);
 
       before(done => {
@@ -152,13 +152,13 @@ describe('class RedisKeyScanner', () => {
           () => setTestKeys({'30-seconds-ago': -1}),
           () => setTestKeys({'20-seconds-ago': -1}),
           () => setTestKeys({'10-seconds-ago': -1}),
-          () => { console.log('done before!'); done(); }
+          () => { done(); }
         ], (func, idx) => setTimeout(func, idx * 10000));
       });
 
       it('minIdle and maxIdle effectively constrain the range of IDLETIME values', done => {
-        scan({pattern: '*', minIdle: 4, maxIdle: 6}, selected => {
-          done(matchedKeys(selected) !== '2-seconds-ago,3-seconds-ago');
+        scan({pattern: '*-seconds-ago', minIdle: '11s', maxIdle: '39s'}, selected => {
+          done(matchedKeys(selected) !== '20-seconds-ago,30-seconds-ago');
         });
       });
     });
