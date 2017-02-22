@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 var
   defaults = {
+    db: 0,
     pattern: '*',
     redisPort: 6379,
     sentinelPort: 26379,
@@ -10,7 +11,7 @@ var
   },
 
   supportedOptions = [
-    'host', 'port', 'redisMaster', 'scanBatch', 'scanLimit', 'limit',
+    'host', 'port', 'redisMaster', 'db', 'scanBatch', 'scanLimit', 'limit',
     'maxIdle', 'maxTTL', 'minIdle', 'minTTL', 'noExpiry', 'pattern'
   ],
 
@@ -46,6 +47,7 @@ var
     '    --limit=N           Limit total number of keys to select (output)',
     '',
     '   Select keys that:',
+    '    --db=N              reside in logical db <N> (defaults to 0)',
     '    --max-idle=<T>      have been inactive for no more than <T>',
     '    --max-ttl=<T>       have a TTL of no more than <T>',
     '    --min-idle=<T>      have been inactive for at least <T>',
@@ -123,6 +125,7 @@ function RedisKeyScanner(options) {
     this.redisOptions = server;
     redisDescription = _.values(server).join(':');
   }
+  this.redisOptions.db = options.db || 0;
   var redis = new Redis(this.redisOptions);
   redis.on('error', _.once(function(err) {
     self.emit('error', err);
@@ -217,6 +220,7 @@ function parseCommandLineAndScanKeys() {
       host: hostPort.length && hostPort[0],
       port: hostPort.length > 1 ? hostPort[1] : defaultPort,
       redisMaster: redisMaster || false,
+      db: args['db'] || defaults.db,
       scanBatch: args['scan-batch'] || defaults.scanBatch,
       scanLimit: args['scan-limit'] || defaults.scanLimit,
       limit: args.limit || defaults.limit,
@@ -230,7 +234,7 @@ function parseCommandLineAndScanKeys() {
     redisKeyScanner,
     supportedArgs = [
       '_', 'expiry', 'limit', 'max-idle', 'max-ttl', 'min-idle', 'min-ttl',
-      'pattern', 'scan-batch', 'scan-limit'
+      'pattern', 'scan-batch', 'scan-limit', 'db'
     ],
     unsupportedArgs = _.keys(_.omit(args, supportedArgs));
 
