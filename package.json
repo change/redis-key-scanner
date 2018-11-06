@@ -21,9 +21,19 @@
   },
   "devDependencies": {
     "chai": "^3.5.0",
+    "eslint": "^5.5.0",
+    "eslint-config-change-base": "^5.0.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-jest": "^21.24.1",
+    "eslint-plugin-lodash": "^3.1.0",
+    "eslint-plugin-mocha": "^5.2.0",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-security": "^1.4.0",
     "mocha": "^2.4.5"
   },
   "scripts": {
+    "lint": "eslint . --cache",
+    "pretest": "npm run lint",
     "test": "mocha test.js"
   }
 }
