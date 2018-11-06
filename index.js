@@ -63,7 +63,6 @@ var
 
   _ = require('lodash'),
   EventEmitter = require('events').EventEmitter,
-  Promise = require('bluebird'),
   Redis = require('ioredis'),
   timeframeToSeconds = require('timeframe-to-seconds'),
   util = require('util');
