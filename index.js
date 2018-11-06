@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 var
   defaults = {
+    debug: false,
     db: 0,
     pattern: '*',
     redisPort: 6379,
@@ -12,7 +13,7 @@ var
 
   supportedOptions = [
     'host', 'port', 'redisMaster', 'db', 'scanBatch', 'scanLimit', 'limit',
-    'maxIdle', 'maxTTL', 'minIdle', 'minTTL', 'noExpiry', 'pattern'
+    'maxIdle', 'maxTTL', 'minIdle', 'minTTL', 'noExpiry', 'pattern', 'debug'
   ],
 
   usage = [
@@ -45,6 +46,7 @@ var
     '                        whether any matching keys have been selected.  By',
     '                        default there is no limit.',
     '    --limit=N           Limit total number of keys to select (output)',
+    '    --debug             Debug mode',
     '',
     '   Select keys that:',
     '    --db=N              reside in logical db <N> (defaults to 0)',
@@ -118,7 +120,7 @@ function RedisKeyScanner(options) {
     this.redisOptions = {
       sentinels: [server],
       name: options.redisMaster,
-      role: 'slave'
+      role: 'master'
     };
     redisDescription = options.redisMaster;
   } else {
@@ -126,7 +128,20 @@ function RedisKeyScanner(options) {
     redisDescription = _.values(server).join(':');
   }
   this.redisOptions.db = options.db || 0;
+  if (this.options.debug) {
+    console.log('options:', JSON.stringify(this.options));
+    console.log('redisOptions:', JSON.stringify(this.redisOptions));
+  }
   var redis = new Redis(this.redisOptions);
+  if (this.options.debug) {
+    console.log('Waiting to connect...');
+    redis.on('connect', function() {
+      console.log('Redis connected');
+    });
+    redis.on('ready', function() {
+      console.log('Redis ready');
+    });
+  }
   redis.on('error', _.once(function(err) {
     self.emit('error', err);
   }));
@@ -155,6 +170,9 @@ function RedisKeyScanner(options) {
   scanStream.on('data', function(batchKeys) {
     var pipeline = redis.pipeline();
     streamKeysScanned += batchKeys.length;
+    if (options.debug) {
+      console.log('scanned ' + batchKeys.length + ' keys');
+    }
     _.each(batchKeys, function(key) {
       pipeline.object('IDLETIME', key);
       if (checkTTL) {pipeline.ttl(key);}
@@ -217,6 +235,7 @@ function parseCommandLineAndScanKeys() {
     usingSentinel = !!redisMaster,
     defaultPort = defaults[usingSentinel ? 'sentinelPort' : 'redisPort'],
     options = _.pickBy({
+      debug: !!args.debug,
       host: hostPort.length && hostPort[0],
       port: hostPort.length > 1 ? hostPort[1] : defaultPort,
       redisMaster: redisMaster || false,
@@ -234,7 +253,7 @@ function parseCommandLineAndScanKeys() {
     redisKeyScanner,
     supportedArgs = [
       '_', 'expiry', 'limit', 'max-idle', 'max-ttl', 'min-idle', 'min-ttl',
-      'pattern', 'scan-batch', 'scan-limit', 'db'
+      'pattern', 'scan-batch', 'scan-limit', 'db', 'debug'
     ],
     unsupportedArgs = _.keys(_.omit(args, supportedArgs));
 
@@ -248,6 +267,10 @@ function parseCommandLineAndScanKeys() {
     });
     redisKeyScanner.on('end', function() {
       process.exit(0);
+    });
+    redisKeyScanner.on('error', function(err) {
+      console.error(err);
+      process.exit(2);
     });
   } catch (ex) {
     console.error(String(ex));
