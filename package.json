@@ -4,7 +4,6 @@
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Change Engineering",
   "license": "MIT",
-
   "repository": {
     "type": "git",
     "url": "git@github.com:change/redis-key-scanner.git"
@@ -12,9 +11,8 @@
   "main": "index",
   "bin": "./index.js",
   "engines": {
-    "node": ">=4.4.5"
+    "node": "~10.13.0"
   },
-
   "dependencies": {
     "bluebird": "^3.3.5",
     "ioredis": "^1.15.1",
@@ -26,7 +24,6 @@
     "chai": "^3.5.0",
     "mocha": "^2.4.5"
   },
-
   "scripts": {
     "test": "mocha test.js"
   }
