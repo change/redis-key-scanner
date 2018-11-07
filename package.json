@@ -17,6 +17,7 @@
     "ioredis": "^4.2.0",
     "lodash": "^4.17.11",
     "minimist": "^1.2.0",
+    "prompt-password": "^1.2.0",
     "timeframe-to-seconds": "^0.0.4"
   },
   "devDependencies": {

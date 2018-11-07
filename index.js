@@ -2,6 +2,7 @@
 const _ = require('lodash');
 const { EventEmitter } = require('events');
 const minimist = require('minimist');
+const Prompt = require('prompt-password');
 const Redis = require('ioredis');
 const timeframeToSeconds = require('timeframe-to-seconds');
 const util = require('util');
@@ -17,16 +18,6 @@ const defaults = {
   limit: Infinity,
 };
 
-const supportedCliArgs = [
-  '_', 'expiry', 'limit', 'max-idle', 'max-ttl', 'min-idle', 'min-ttl', 'pattern', 'scan-batch',
-  'scan-limit', 'db', 'debug',
-];
-
-const supportedOptions = [
-  'host', 'port', 'redisMaster', 'db', 'scanBatch', 'scanLimit', 'limit', 'maxIdle', 'maxTTL',
-  'minIdle', 'minTTL', 'noExpiry', 'pattern', 'debug',
-];
-
 const usage = `Usage:
   node redis-key-scanner <host>[:<port>] [<master_name>] [options]
 
@@ -40,8 +31,7 @@ const usage = `Usage:
   <host>              (Required) Hostname or IP of the redis server or
                       sentinel to scan.
   <port>              Port number if non-standard.  Default redis port
-                      is ${defaults.redisPort}, and default sentinel
-                      port is ${defaults.sentinelPort}.
+                      is ${defaults.redisPort}, and default sentinel port is ${defaults.sentinelPort}.
   <master_name>       Inclusion of this argument inidicates the use of
                       redis sentinel.  When <master_name> is specified,
                       the <host> and <port> options are understood to
@@ -49,6 +39,8 @@ const usage = `Usage:
                       server.  However, a connection will be attempted to
                       the corresponding *slave*.
 
+  -p                  Prompt for a password that will be passed to the
+                      redis server.
   --scan-batch=N      Batch/count size to use with the redis SCAN
                       operation.  Default is ${defaults.scanBatch}.
   --scan-limit=N      Limit total number of keys to scan.  Scanning will
@@ -69,6 +61,16 @@ const usage = `Usage:
 
  Timeframes <T> are of the form "<number><unit>" where unit may be any
  of 's' (seconds), 'm' (minutes), 'h' (hours), 'd' (days), or 'w' weeks.`;
+
+const supportedCliArgs = [
+  '_', 'db', 'debug', 'expiry', 'limit', 'max-idle', 'max-ttl', 'min-idle', 'min-ttl', 'p',
+  'pattern', 'scan-batch', 'scan-limit',
+];
+
+const supportedOptions = [
+  'db', 'debug', 'host', 'limit', 'maxIdle', 'maxTTL', 'minIdle', 'minTTL', 'noExpiry', 'password',
+  'pattern', 'port', 'redisMaster', 'scanBatch', 'scanLimit',
+];
 
 /* eslint-disable no-console */
 const log = (...args) => { console.log(...args); };
@@ -120,6 +122,21 @@ function sanitizeOptions(rawOptions) {
   return options;
 }
 
+const logOptions = (options, redisOptions) => {
+  if (options.debug) {
+    log('options:', JSON.stringify(options));
+    log('redisOptions:', JSON.stringify(redisOptions));
+  }
+};
+
+const logConnection = (options, redis) => {
+  if (options.debug) {
+    log('Waiting to connect...');
+    redis.on('connect', () => { log('Redis connected'); });
+    redis.on('ready', () => { log('Redis ready'); });
+  }
+};
+
 function connect(options) {
   // Connect to redis server / sentinel
   const server = _.pick(options, ['host', 'port']);
@@ -134,19 +151,17 @@ function connect(options) {
 
   redisOptions.db = options.db || 0;
 
-  if (options.debug) {
-    log('options:', JSON.stringify(options));
-    log('redisOptions:', JSON.stringify(redisOptions));
+  if (options.password) {
+    redisOptions.password = options.password;
+    redisOptions.tls = {};
   }
+
+  logOptions(options, redisOptions);
 
   const redis = new Redis(redisOptions);
   redis.description = options.redisMaster || _.values(server).join(':');
 
-  if (options.debug) {
-    log('Waiting to connect...');
-    redis.on('connect', () => { log('Redis connected'); });
-    redis.on('ready', () => { log('Redis ready'); });
-  }
+  logConnection(options, redis);
 
   const self = this;
   redis.on('error', _.once((err) => {
@@ -175,12 +190,13 @@ function scan(options, redis) {
     && (!_.has(options, 'noExpiry') || (options.noExpiry && ttl === -1));
 
   const endScan = _.once(() => Promise.all(pipelinePromises)
+    .then(() => null)
     .catch(err => err)
     .then((err) => {
       self.write(_.extend(
         { keysScanned, keysSelected },
         err ? { error: err.message || String(err) } : null,
-        options
+        _.omit(options, 'password')
       ));
       self.end();
       return err;
@@ -209,11 +225,7 @@ function scan(options, redis) {
         if (selectKey({ idletime, ttl })) {
           keysSelected += 1;
           atSelectLimit = keysSelected >= options.limit;
-          const entry = {
-            name: redis.description,
-            key,
-            idletime,
-          };
+          const entry = { name: redis.description, key, idletime };
           if (options.checkTTL) { entry.ttl = ttl; }
           self.write(entry);
         }
@@ -246,12 +258,23 @@ RedisKeyScanner.prototype.end = function end() {
   this.emit('end');
 };
 
-function parseCommandLineAndScanKeys() { // eslint-disable-line complexity
+const promptForPassword = () => {
+  const prompt = new Prompt({
+    type: 'password',
+    message: 'Enter redis server password',
+    name: 'password',
+  });
+  return prompt.run();
+};
+
+async function parseCommandLineAndScanKeys() { // eslint-disable-line complexity
   const args = minimist(process.argv.slice(2));
   const hostPort = args._.length && args._[0].split(':');
   const redisMaster = args._.length > 1 && args._[1];
   const usingSentinel = !!redisMaster;
   const defaultPort = defaults[usingSentinel ? 'sentinelPort' : 'redisPort'];
+
+  const password = args.p ? await promptForPassword() : undefined;
 
   const options = _.pickBy({
     debug: !!args.debug,
@@ -267,6 +290,7 @@ function parseCommandLineAndScanKeys() { // eslint-disable-line complexity
     minIdle: args['min-idle'],
     minTTL: args['min-ttl'],
     noExpiry: args.expiry === false,
+    password,
     pattern: args.pattern || '*',
   }, v => !_.isNaN(v) && !_.isUndefined(v) && v !== false);
 
