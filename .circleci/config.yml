@@ -8,4 +8,4 @@ jobs:
 
     steps:
       - checkout
-      - npm test
+      - run: npm test
