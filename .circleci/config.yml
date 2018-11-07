@@ -5,6 +5,7 @@ jobs:
     working_directory: ~/change/redis-key-scanner
     docker:
       - image: node:10.13-stretch
+      - image: redis:2.8.8
 
     steps:
       - checkout
