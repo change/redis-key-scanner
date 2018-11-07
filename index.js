@@ -15,7 +15,7 @@ const defaults = {
   sentinelPort: 26379,
   scanBatch: 1000,
   scanLimit: Infinity,
-  limit: Infinity,
+  limit: 1000,
 };
 
 const usage = `Usage:
@@ -159,7 +159,7 @@ function connect(options) {
   logOptions(options, redisOptions);
 
   const redis = new Redis(redisOptions);
-  redis.description = options.redisMaster || _.values(server).join(':');
+  redis.description = options.redisMaster || `${server.host}:${server.port}:${server.db}`;
 
   logConnection(options, redis);
 
