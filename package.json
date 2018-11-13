@@ -1,10 +1,9 @@
 {
   "name": "redis-key-scanner",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Change Engineering",
   "license": "MIT",
-
   "repository": {
     "type": "git",
     "url": "git@github.com:change/redis-key-scanner.git"
@@ -12,22 +11,29 @@
   "main": "index",
   "bin": "./index.js",
   "engines": {
-    "node": ">=4.4.5"
+    "node": "~10.13.0"
   },
-
   "dependencies": {
-    "bluebird": "^3.3.5",
-    "ioredis": "^1.15.1",
-    "lodash": "^4.11.1",
+    "ioredis": "^4.2.0",
+    "lodash": "^4.17.11",
     "minimist": "^1.2.0",
+    "prompt-password": "^1.2.0",
     "timeframe-to-seconds": "^0.0.4"
   },
   "devDependencies": {
-    "chai": "^3.5.0",
-    "mocha": "^2.4.5"
+    "chai": "^4.2.0",
+    "eslint": "^5.5.0",
+    "eslint-config-change-base": "^6.0.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-lodash": "^3.1.0",
+    "eslint-plugin-mocha": "^5.2.0",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-security": "^1.4.0",
+    "mocha": "^5.2.0"
   },
-
   "scripts": {
-    "test": "mocha test.js"
+    "lint": "eslint . --cache",
+    "pretest": "npm run lint",
+    "test": "mocha test.js --exit"
   }
 }

@@ -1,0 +1,22 @@
+version: 2
+jobs:
+
+  build:
+    working_directory: ~/change/redis-key-scanner
+    docker:
+      - image: node:10.13-stretch
+      - image: redis:2.8.8
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          key: v1-npmdeps-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install dependencies
+          command: npm i --progress=false
+      - save_cache:
+          key: v1-npmdeps-{{ checksum "package-lock.json" }}
+          paths: node_modules
+
+      - run: npm test
