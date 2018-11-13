@@ -1,7 +1,5 @@
 module.exports = {
-  extends: ['change-base', 'plugin:security/recommended'],
-
-  plugins: ['security'],
+  extends: ['change-base', 'change-base/mocha'],
 
   rules: {
     'object-curly-newline': ['error', {

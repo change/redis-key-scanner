@@ -78,7 +78,9 @@ describe('class RedisKeyScanner', () => {
   });
 
   describe('when redis not running on the specified port', () => {
-    it('emits an error event', done => extendArgs({ port: 80 })().on('error', () => done()));
+    it('emits an error event', (done) => {
+      extendArgs({ port: 80 })().on('error', () => done());
+    });
   });
 
   describe('when redis connection succeeds', () => {
