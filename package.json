@@ -1,6 +1,6 @@
 {
   "name": "redis-key-scanner",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Scan redis servers looking for key patterns and activity characteristics",
   "author": "Change Engineering",
   "license": "MIT",
@@ -11,7 +11,7 @@
   "main": "index",
   "bin": "./index.js",
   "engines": {
-    "node": "~10.13.0"
+    "node": ">=10.13.0"
   },
   "dependencies": {
     "ioredis": "^4.2.0",
