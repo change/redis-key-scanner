@@ -193,11 +193,12 @@ function scan(options, redis) {
     .then(() => null)
     .catch(err => err)
     .then((err) => {
-      self.write(_.extend(
-        { keysScanned, keysSelected },
-        err ? { error: err.message || String(err) } : null,
-        _.omit(options, 'password')
-      ));
+      self.write({
+        keysScanned,
+        keysSelected,
+        ...err ? { error: err.message || String(err) } : null,
+        ..._.omit(options, 'password'),
+      });
       self.end();
       return err;
     }));
