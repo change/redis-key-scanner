@@ -22,7 +22,7 @@ const deleteTestKeys = () => {
 
 const extendArgs = o => (
   () => {
-    const opts = _.extend({}, defaultArgs, o);
+    const opts = { ...defaultArgs, ...o };
     if (opts.pattern) { opts.pattern = `${prefix}${opts.pattern}`; }
     return new RedisKeyScanner(opts);
   }
