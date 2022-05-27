@@ -14,7 +14,7 @@
     "node": ">=10.13.0"
   },
   "dependencies": {
-    "ioredis": "^4.2.0",
+    "ioredis": "^4.28.5",
     "lodash": "^4.17.19",
     "minimist": "^1.2.5",
     "prompt-password": "^1.2.0",
